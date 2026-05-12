@@ -2,7 +2,7 @@ import axios from 'axios';
 
 const API = axios.create({
     // This looks at your .env file. If it's empty, it defaults to localhost.
-    baseURL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000/api'
+    baseURL: import.meta.env.VITE_API_BASE_URL || 'https://techveda-server.onrender.com/api'
 });
 
 // Automatically attach the token to every request if it exists
