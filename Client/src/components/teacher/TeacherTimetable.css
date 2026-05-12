@@ -1,0 +1,127 @@
+.teacher-timetable {
+    animation: fadeIn 0.3s ease-in;
+}
+
+.tt-loading,
+.tt-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 80px 20px;
+    background: white;
+    border-radius: 20px;
+    border: 1px solid #e2e8f0;
+    text-align: center;
+}
+
+.tt-empty h2 { color: #0f172a; margin-bottom: 8px; }
+.tt-empty p { color: #64748b; font-size: 0.95rem; }
+
+.tt-header {
+    margin-bottom: 24px;
+}
+
+.tt-header h2 {
+    color: #0f172a;
+    font-size: 1.5rem;
+}
+
+.tt-header p {
+    color: #64748b;
+    font-size: 0.9rem;
+    margin-top: 4px;
+}
+
+.teacher-timetable .tt-view-wrapper {
+    background: white;
+    border-radius: 16px;
+    border: 1px solid #e2e8f0;
+    overflow-x: auto;
+}
+
+.teacher-timetable .tt-view-table {
+    width: 100%;
+    border-collapse: collapse;
+    text-align: center;
+    min-width: 900px;
+}
+
+.teacher-timetable .tt-view-table th {
+    padding: 14px 10px;
+    background: #f8fafc;
+    color: #475569;
+    font-weight: 600;
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    border-bottom: 1px solid #e2e8f0;
+}
+
+.teacher-timetable .tt-view-table th .slot-time {
+    display: block;
+    font-size: 0.7rem;
+    font-weight: 400;
+    color: #94a3b8;
+    margin-top: 2px;
+    text-transform: none;
+}
+
+.teacher-timetable .break-header {
+    background: #fefce8 !important;
+    color: #a16207 !important;
+}
+
+.teacher-timetable .day-cell {
+    font-weight: 600;
+    color: #1e293b;
+    background: #f8fafc;
+    padding: 14px;
+    text-align: left;
+    min-width: 100px;
+}
+
+.teacher-timetable .break-cell {
+    background: #fefce8;
+    color: #a16207;
+    font-weight: 600;
+    font-size: 0.8rem;
+}
+
+.teacher-timetable .view-cell {
+    padding: 12px 8px;
+    border-top: 1px solid #f1f5f9;
+}
+
+.teacher-timetable .view-cell.filled {
+    background: #f0fdf4;
+}
+
+.teacher-timetable .view-cell.free {
+    background: #fafafa;
+}
+
+.teacher-timetable .cell-subject {
+    display: block;
+    font-weight: 600;
+    color: #1e293b;
+    font-size: 0.85rem;
+}
+
+.teacher-timetable .cell-class {
+    display: block;
+    font-size: 0.75rem;
+    color: #059669;
+    font-weight: 500;
+    margin-top: 2px;
+}
+
+.teacher-timetable .cell-free {
+    color: #94a3b8;
+    font-size: 0.8rem;
+    font-style: italic;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}

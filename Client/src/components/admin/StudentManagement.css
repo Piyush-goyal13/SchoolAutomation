@@ -1,0 +1,86 @@
+.student-mgmt {
+    animation: fadeIn 0.3s ease-in;
+}
+
+.student-mgmt .section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 30px;
+}
+
+.student-mgmt .section-header h2 {
+    color: #0f172a;
+    font-size: 1.5rem;
+}
+
+.student-mgmt .section-header p {
+    color: #64748b;
+    font-size: 0.9rem;
+}
+
+.student-mgmt .modal-card {
+    max-width: 600px;
+}
+
+.filter-bar {
+    display: flex;
+    align-items: flex-end;
+    gap: 16px;
+    margin-bottom: 20px;
+    padding: 16px 20px;
+    background: white;
+    border-radius: 12px;
+    border: 1px solid #e2e8f0;
+}
+
+.filter-group {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.filter-group label {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: #475569;
+    text-transform: uppercase;
+}
+
+.filter-group select {
+    padding: 10px 14px;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    font-size: 0.9rem;
+    color: #334155;
+    background: #f8fafc;
+    cursor: pointer;
+    outline: none;
+    transition: 0.2s;
+}
+
+.filter-group select:focus {
+    border-color: #4f46e5;
+    box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+}
+
+.filter-count {
+    font-size: 0.85rem;
+    color: #64748b;
+    margin-left: auto;
+    white-space: nowrap;
+}
+
+.form-row {
+    display: flex;
+    gap: 16px;
+}
+
+.form-row .form-group {
+    flex: 1;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}

@@ -1,0 +1,92 @@
+.student-sidebar {
+    width: 260px;
+    background-color: #0f172a;
+    display: flex;
+    flex-direction: column;
+    padding: 30px 20px;
+    color: white;
+}
+
+.student-sidebar .logo-section h2 {
+    color: #818cf8;
+    margin-bottom: 40px;
+    text-align: center;
+}
+
+.student-sidebar .nav-links {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    flex: 1;
+}
+
+.student-sidebar .nav-links button {
+    background: transparent;
+    border: none;
+    color: #94a3b8;
+    padding: 14px 18px;
+    text-align: left;
+    font-size: 0.95rem;
+    border-radius: 12px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.student-sidebar .nav-links button.active,
+.student-sidebar .nav-links button:hover {
+    background-color: #1e293b;
+    color: white;
+}
+
+.student-main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+}
+
+.student-header {
+    height: 80px;
+    background: white;
+    border-bottom: 1px solid #e2e8f0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0 40px;
+}
+
+.student-header h1 {
+    font-size: 1.25rem;
+    color: #0f172a;
+}
+
+.student-body {
+    padding: 40px;
+}
+
+.placeholder-view {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 80px 20px;
+    background: white;
+    border-radius: 20px;
+    border: 1px solid #e2e8f0;
+    text-align: center;
+}
+
+.placeholder-icon {
+    font-size: 3rem;
+    margin-bottom: 16px;
+}
+
+.placeholder-view h2 {
+    color: #0f172a;
+    margin-bottom: 8px;
+}
+
+.placeholder-view p {
+    color: #64748b;
+    font-size: 0.95rem;
+}
