@@ -17,21 +17,7 @@ dotenv.config();
 
 const app = express();
 
-app.use(cors({
-    origin: (origin, callback) => {
-        const allowed = [
-            'http://localhost:5173',
-            'https://school-automation-gamma.vercel.app',
-            process.env.CLIENT_URL
-        ].filter(Boolean).map(u => u.replace(/\/$/, ''));
-        if (!origin || allowed.includes(origin.replace(/\/$/, ''))) {
-            callback(null, true);
-        } else {
-            callback(new Error('Not allowed by CORS'));
-        }
-    },
-    credentials: true
-}));
+app.use(cors({ origin: '*', credentials: false }));
 app.use(express.json());
 
 connectDB();
