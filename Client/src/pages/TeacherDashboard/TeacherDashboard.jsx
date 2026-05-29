@@ -7,6 +7,7 @@ import TeacherTimetable from '../../components/teacher/TeacherTimetable';
 import TeacherAttendance from '../../components/teacher/TeacherAttendance';
 import TeacherMarks from '../../components/teacher/TeacherMarks';
 import TeacherNotices from '../../components/teacher/TeacherNotices';
+import TeacherExam from '../../components/teacher/TeacherExam';
 import ChangePassword from '../../components/shared/ChangePassword';
 
 const TeacherDashboard = () => {
@@ -29,6 +30,8 @@ const TeacherDashboard = () => {
                 return <TeacherNotices />;
             case 'performance':
                 return <TeacherMarks />;
+            case 'exams':
+                return <TeacherExam />;
             case 'settings':
                 return <ChangePassword />;
             default:
@@ -53,6 +56,7 @@ const TeacherDashboard = () => {
                     <button className={activeTab === 'attendance' ? 'active' : ''} onClick={() => setActiveTab('attendance')}>📋 Attendance</button>
                     <button className={activeTab === 'notices' ? 'active' : ''} onClick={() => setActiveTab('notices')}>📢 Notices</button>
                     <button className={activeTab === 'performance' ? 'active' : ''} onClick={() => setActiveTab('performance')}>📊 Performance</button>
+                    <button className={activeTab === 'exams' ? 'active' : ''} onClick={() => setActiveTab('exams')}>🧠 Exams</button>
                     <button className={activeTab === 'settings' ? 'active' : ''} onClick={() => setActiveTab('settings')}>⚙️ Settings</button>
                 </nav>
                 <button className="logout-btn" onClick={handleLogout}>Log Out</button>

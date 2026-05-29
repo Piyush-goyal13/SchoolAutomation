@@ -13,6 +13,7 @@ const TimetableManagement = () => {
     const [loading, setLoading] = useState(false);
     const [editing, setEditing] = useState(false);
     const [timetableExists, setTimetableExists] = useState(false);
+    const [generating, setGenerating] = useState(false);
 
     useEffect(() => {
         const fetchData = async () => {
@@ -85,6 +86,22 @@ const TimetableManagement = () => {
         setSchedule(updated);
     };
 
+    const handleGenerate = async () => {
+        setGenerating(true);
+        try {
+            const res = await API.post('/timetable/generate', {
+                class: selectedClass,
+                section: selectedSection
+            });
+            setSchedule(res.data.schedule);
+            setEditing(true);
+        } catch (err) {
+            alert(err.response?.data?.message || 'Error generating timetable');
+        } finally {
+            setGenerating(false);
+        }
+    };
+
     const handleSave = async () => {
         setLoading(true);
         try {
@@ -153,6 +170,9 @@ const TimetableManagement = () => {
                     <div className="tt-actions">
                         {!editing ? (
                             <>
+                                <button className="ai-btn" onClick={handleGenerate} disabled={generating}>
+                                    {generating ? '⏳ Generating...' : '✨ AI Generate'}
+                                </button>
                                 <button className="primary-btn" onClick={() => setEditing(true)}>
                                     {timetableExists ? 'Edit Timetable' : 'Create Timetable'}
                                 </button>

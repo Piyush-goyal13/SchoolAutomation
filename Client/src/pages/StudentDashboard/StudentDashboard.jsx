@@ -6,6 +6,7 @@ import StudentAttendance from '../../components/student/StudentAttendance';
 import StudentMarks from '../../components/student/StudentMarks';
 import StudentNotices from '../../components/student/StudentNotices';
 import StudentFees from '../../components/student/StudentFees';
+import StudentExam from '../../components/student/StudentExam';
 import ChangePassword from '../../components/shared/ChangePassword';
 
 const StudentDashboard = () => {
@@ -26,6 +27,8 @@ const StudentDashboard = () => {
                 return <StudentMarks />;
             case 'dues':
                 return <StudentFees />;
+            case 'exams':
+                return <StudentExam />;
             case 'settings':
                 return <ChangePassword />;
             default:
@@ -49,6 +52,7 @@ const StudentDashboard = () => {
                     <button className={activeTab === 'notices' ? 'active' : ''} onClick={() => setActiveTab('notices')}>📢 Notices</button>
                     <button className={activeTab === 'performance' ? 'active' : ''} onClick={() => setActiveTab('performance')}>📊 Performance</button>
                     <button className={activeTab === 'dues' ? 'active' : ''} onClick={() => setActiveTab('dues')}>💰 Pending Dues</button>
+                    <button className={activeTab === 'exams' ? 'active' : ''} onClick={() => setActiveTab('exams')}>🧠 Exams</button>
                     <button className={activeTab === 'settings' ? 'active' : ''} onClick={() => setActiveTab('settings')}>⚙️ Settings</button>
                 </nav>
                 <button className="logout-btn" onClick={handleLogout}>Log Out</button>
