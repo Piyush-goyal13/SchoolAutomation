@@ -1,135 +1,234 @@
-# TechVeda - School Management System
+# 🏫 TechVeda — School Management System
 
-A comprehensive full-stack School Management System with role-based access for Admin, Teachers, and Students.
+> A full-stack web app that runs an entire school from a single browser tab.
 
-## 🚀 Tech Stack
+---
 
-- **Frontend:** React 19, Vite, React Router v7, Axios, jsPDF
-- **Backend:** Node.js, Express 5, MongoDB, Mongoose
-- **Authentication:** JWT (JSON Web Tokens), bcrypt
-- **Payments:** Razorpay Integration (Test Mode)
-- **Email:** Nodemailer + Gmail
-- **PDF Generation:** jsPDF + AutoTable
+## 🤔 What is TechVeda?
 
-## ✨ Features
+Imagine running a school — you have hundreds of students, dozens of teachers, exams every month, fees to collect, attendance to track, and notices to send. Doing all of this manually with registers and spreadsheets is a nightmare.
 
-### 👨‍💼 Admin Dashboard
-- Manage Teachers & Students (CRUD with search & filters)
-- Assign Section Incharge to teachers
-- Create & manage Timetables (6 periods + breaks, Mon-Sat)
-- View attendance of any student
-- Post notices (school-wide, role-specific, or section-specific)
-- Fee management (generate monthly/yearly, track payments)
-- Change password
+**TechVeda** solves this. It's a smart school management system where:
+- 👨‍💼 **Admins** manage everything from one dashboard
+- 👨‍🏫 **Teachers** handle their classes, attendance, marks and exams
+- 🎓 **Students** track their progress, pay fees and take live exams
 
-### 👨‍🏫 Teacher Dashboard
-- View profile with assigned section info
-- My Students (from timetable assignments)
-- My Section (incharge students)
-- Auto-generated timetable from class schedules
-- Mark attendance for assigned section
-- View student attendance history with summary
-- Enter marks by exam type (Unit Tests, Mid Term, Final)
-- Post notices to section
-- Change password
+All of it — in one web app, accessible from anywhere.
 
-### 🎓 Student Dashboard
-- View profile with section incharge info
-- View attendance with monthly summary
-- View class timetable
-- View marks/grades with report card
-- View notices
-- Pay fees via Razorpay (test mode)
-- Download PDFs (Report Card, Fee Receipt, Attendance Report)
-- Change password
+---
 
-### 📧 Email Notifications
-- Notice posted → email to relevant audience
-- Marks entered → email to students with results
+## 🌐 Live App
 
-### 💳 Payment Gateway
-- Razorpay integration (test mode - no real money)
-- Secure server-side verification with HMAC signature
-- Academic year based fee structure (April - March)
+| | URL |
+|---|---|
+| 🖥️ Frontend | https://school-automation-gamma.vercel.app |
+| ⚙️ Backend API | https://techveda-server.onrender.com/api |
 
-## 📁 Project Structure
-
-```
-SchoolAutomation/
-├── Client/                 # React Frontend (Vite)
-│   ├── src/
-│   │   ├── api/           # Axios instance
-│   │   ├── components/    # Reusable components
-│   │   │   ├── admin/    # Admin-specific components
-│   │   │   ├── teacher/  # Teacher-specific components
-│   │   │   ├── student/  # Student-specific components
-│   │   │   └── shared/   # Shared components
-│   │   ├── pages/        # Dashboard pages
-│   │   └── utils/        # PDF generators
-│   └── index.html
-│
-└── Server/                 # Node.js Backend
-    ├── config/            # Database configuration
-    ├── Controllers/       # Route handlers
-    ├── middleware/        # Auth middleware
-    ├── models/           # Mongoose schemas
-    ├── routes/           # API routes
-    ├── utils/            # Email service
-    ├── seed.js           # Database seeder
-    └── server.js         # Entry point
-```
-
-## 🛠️ Setup & Installation
-
-### Prerequisites
-- Node.js 18+
-- MongoDB (local or Atlas)
-- Gmail account (for email notifications)
-- Razorpay account (for payment gateway)
-
-### Backend Setup
-```bash
-cd Server
-npm install
-# Create .env file with:
-# MONGO_URI=your_mongodb_uri
-# JWT_SECRET=your_secret
-# EMAIL_USER=your_gmail
-# EMAIL_PASS=your_app_password
-# RAZORPAY_KEY_ID=your_key
-# RAZORPAY_KEY_SECRET=your_secret
-# CLIENT_URL=http://localhost:5173
-npm start
-```
-
-### Frontend Setup
-```bash
-cd Client
-npm install
-# Create .env file with:
-# VITE_API_BASE_URL=http://localhost:4000/api
-npm run dev
-```
-
-### Seed Database
-```bash
-cd Server
-node seed.js
-```
-
-## 🔐 Test Credentials
+### 🔐 Test Credentials
 
 | Role | Email | Password |
-|------|-------|----------|
+|---|---|---|
 | Admin | admin@school.com | adminpassword123 |
 | Teacher | sarah@school.com | teacher123 |
 | Student | rahul@school.com | student123 |
 
-## 💳 Razorpay Test Payment
+---
 
-- UPI: `success@razorpay`
-- Card: `5267 3181 8797 5449` (any expiry, any CVV)
+## 🧠 The Cool Parts
+
+### ✨ AI-Generated Timetable
+The admin doesn't manually assign teachers to periods. Instead, they click one button and the system:
+1. Looks at all teachers and their subjects
+2. Checks which teachers are already busy in other classes
+3. Automatically builds a conflict-free timetable with balanced workload
+
+No double-booking. No manual effort.
+
+### 🤖 AI Exam Generator
+Teachers upload a PDF (textbook chapter, notes, anything) and the system:
+1. Extracts the text from the PDF
+2. Sends it to **Groq AI (LLaMA 3.3)** with a prompt
+3. Gets back 10–20 MCQ questions with 4 options each
+4. Teacher reviews, edits if needed, sets a date/time and schedules it
+
+At the scheduled time, the exam **automatically goes live** for students. They take it, submit it, and get their score instantly — all auto-graded.
+
+### 💳 Online Fee Payment
+Students can pay their monthly fees directly through the app using **Razorpay** (UPI, cards, netbanking). No need to visit the school office.
+
+### 📧 Automatic Email Notifications
+The system sends emails automatically when:
+- A notice is posted (to all relevant students/teachers)
+- Marks are entered (students get their results by email)
+
+---
+
+## 👥 Who Can Do What?
+
+### 👨‍💼 Admin
+- Add/edit/remove teachers and students
+- Generate timetables with AI
+- View attendance of any student
+- Generate and track fee payments
+- Post notices to the whole school or specific sections
+
+### 👨‍🏫 Teacher
+- View their auto-generated personal timetable
+- Mark daily attendance for their section
+- Enter exam marks for their subject
+- Upload a PDF → get AI-generated MCQ exam → schedule it
+- Post notices to their section
+- View results of their exams
+
+### 🎓 Student
+- View attendance with monthly summary
+- See class timetable
+- Check marks and download report card as PDF
+- Take live MCQ exams with a countdown timer
+- Pay fees online
+- Download fee receipts and attendance reports as PDF
+
+---
+
+## 🛠️ How It's Built
+
+```
+TechVeda
+├── Frontend (React + Vite)          → What you see in the browser
+│   ├── React 19                     → UI components
+│   ├── React Router v7              → Page navigation
+│   ├── Axios                        → API calls to backend
+│   └── jsPDF                        → PDF generation in browser
+│
+└── Backend (Node.js + Express)      → The brain of the app
+    ├── Express 5                    → API server
+    ├── MongoDB + Mongoose           → Database
+    ├── JWT + bcrypt                 → Login & security
+    ├── Nodemailer                   → Email notifications
+    ├── Razorpay                     → Payment gateway
+    ├── Groq AI (LLaMA 3.3)         → MCQ generation from PDF
+    └── pdf2json                     → PDF text extraction
+```
+
+---
+
+## 🔄 How a Request Works
+
+Here's what happens when a student logs in:
+
+```
+Student types email + password
+        ↓
+Browser sends POST /api/auth/login
+        ↓
+Server checks MongoDB for the user
+        ↓
+bcrypt compares the password hash
+        ↓
+Server sends back a JWT token
+        ↓
+Browser stores token in localStorage
+        ↓
+Every future request includes the token
+        ↓
+Server verifies token → allows access
+```
+
+---
+
+## 🗄️ Database Structure
+
+The app has **9 collections** in MongoDB:
+
+| Collection | What it stores |
+|---|---|
+| `users` | Login info for all roles |
+| `teachers` | Subject, assigned class/section |
+| `students` | Class, section, parent info |
+| `timetables` | 6-day schedule per class/section |
+| `attendances` | Daily present/absent/late records |
+| `marks` | Exam scores per student per subject |
+| `exams` | AI-generated MCQ exams + submissions |
+| `fees` | Monthly fee records + payment status |
+| `notices` | Announcements with audience targeting |
+
+---
+
+## 🚀 How to Run Locally
+
+### Backend
+```bash
+cd Server
+npm install
+# Create .env with your credentials (see .env.example)
+npm start
+# Runs on http://localhost:4000
+```
+
+### Frontend
+```bash
+cd Client
+npm install
+# Create .env with VITE_API_BASE_URL=http://localhost:4000/api
+npm run dev
+# Runs on http://localhost:5173
+```
+
+### Seed the Database
+```bash
+cd Server
+node seed.js
+# Creates admin, 10 teachers, 30 students
+```
+
+---
+
+## 🔑 Environment Variables
+
+### Server `.env`
+```
+MONGO_URI=mongodb+srv://...
+JWT_SECRET=your_secret_key
+EMAIL_USER=your_gmail
+EMAIL_PASS=your_app_password
+RAZORPAY_KEY_ID=rzp_test_...
+RAZORPAY_KEY_SECRET=...
+GROQ_API_KEY=gsk_...
+CLIENT_URL=https://your-frontend.vercel.app
+```
+
+### Client `.env`
+```
+VITE_API_BASE_URL=https://your-backend.onrender.com/api
+```
+
+---
+
+## 📦 Deployment
+
+| Service | Platform | Purpose |
+|---|---|---|
+| Frontend | Vercel | Hosts the React app |
+| Backend | Render | Runs the Node.js server |
+| Database | MongoDB Atlas | Cloud database |
+
+---
+
+## 💳 Test Payments (Razorpay)
+
+Since this is in test mode, no real money is charged.
+
+| Method | Details |
+|---|---|
+| UPI | `success@razorpay` |
+| Card | `5267 3181 8797 5449` (any expiry, any CVV) |
+
+---
 
 ## 📄 License
 
-MIT
+MIT — free to use, modify and distribute.
+
+---
+
+*Built with ❤️ by the TechVeda team*
