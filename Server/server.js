@@ -12,6 +12,7 @@ const noticeRoutes = require('./routes/noticeRoutes');
 const feeRoutes = require('./routes/feeRoutes');
 const paymentRoutes = require('./routes/paymentRoutes');
 const examRoutes = require('./routes/examRoutes');
+const chatbotRoutes = require('./routes/chatbotRoutes');
 
 dotenv.config();
 
@@ -32,6 +33,7 @@ app.use('/api/notices', noticeRoutes);
 app.use('/api/fees', feeRoutes);
 app.use('/api/payment', paymentRoutes);
 app.use('/api/exams', examRoutes);
+app.use('/api/chatbot', chatbotRoutes);
 
 const port = process.env.PORT || 4000;
 app.listen(port, () => console.log(`Server running on port ${port}`));

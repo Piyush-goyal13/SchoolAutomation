@@ -8,6 +8,7 @@ import StudentNotices from '../../components/student/StudentNotices';
 import StudentFees from '../../components/student/StudentFees';
 import StudentExam from '../../components/student/StudentExam';
 import ChangePassword from '../../components/shared/ChangePassword';
+import Chatbot from '../../components/shared/Chatbot';
 
 const StudentDashboard = () => {
     const [activeTab, setActiveTab] = useState('profile');
@@ -29,6 +30,8 @@ const StudentDashboard = () => {
                 return <StudentFees />;
             case 'exams':
                 return <StudentExam />;
+            case 'chatbot':
+                return <Chatbot />;
             case 'settings':
                 return <ChangePassword />;
             default:
@@ -53,6 +56,7 @@ const StudentDashboard = () => {
                     <button className={activeTab === 'performance' ? 'active' : ''} onClick={() => setActiveTab('performance')}>📊 Performance</button>
                     <button className={activeTab === 'dues' ? 'active' : ''} onClick={() => setActiveTab('dues')}>💰 Pending Dues</button>
                     <button className={activeTab === 'exams' ? 'active' : ''} onClick={() => setActiveTab('exams')}>🧠 Exams</button>
+                    <button className={activeTab === 'chatbot' ? 'active' : ''} onClick={() => setActiveTab('chatbot')}>🤖 AI Chat</button>
                     <button className={activeTab === 'settings' ? 'active' : ''} onClick={() => setActiveTab('settings')}>⚙️ Settings</button>
                 </nav>
                 <button className="logout-btn" onClick={handleLogout}>Log Out</button>

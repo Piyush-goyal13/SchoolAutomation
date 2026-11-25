@@ -7,6 +7,7 @@ import AdminAttendance from '../../components/admin/AdminAttendance';
 import AdminNotices from '../../components/admin/AdminNotices';
 import AdminFees from '../../components/admin/AdminFees';
 import ChangePassword from '../../components/shared/ChangePassword';
+import Chatbot from '../../components/shared/Chatbot';
 import API from '../../api/axious';
 
 const AdminDashboard = () => {
@@ -45,6 +46,8 @@ const AdminDashboard = () => {
                 return <AdminNotices />;
             case 'fees':
                 return <AdminFees />;
+            case 'chatbot':
+                return <Chatbot />;
             case 'settings':
                 return <ChangePassword />;
             case 'overview':
@@ -75,6 +78,7 @@ const AdminDashboard = () => {
                     <button className={activeTab === 'attendance' ? 'active' : ''} onClick={() => setActiveTab('attendance')}>📋 Attendance</button>
                     <button className={activeTab === 'notices' ? 'active' : ''} onClick={() => setActiveTab('notices')}>📢 Notices</button>
                     <button className={activeTab === 'fees' ? 'active' : ''} onClick={() => setActiveTab('fees')}>💰 Fees</button>
+                    <button className={activeTab === 'chatbot' ? 'active' : ''} onClick={() => setActiveTab('chatbot')}>🤖 AI Chat</button>
                     <button className={activeTab === 'settings' ? 'active' : ''} onClick={() => setActiveTab('settings')}>⚙️ Settings</button>
                 </nav>
                 <button className="logout-btn" onClick={handleLogout}>Log Out</button>
