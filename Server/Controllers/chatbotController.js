@@ -7,6 +7,7 @@ const Fee = require('../models/Fee');
 const Exam = require('../models/Exam');
 const Notice = require('../models/Notice');
 const KnowledgeBase = require('../models/KnowledgeBase');
+const ChatbotLog = require('../models/ChatbotLog');
 
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -349,6 +350,16 @@ async function executeTools(selectedTools, role, userId, query) {
     await Promise.all(selectedTools.map(async (toolName) => {
         try {
             const tool = TOOLS[toolName];
+
+            // ── Defense-in-depth: Re-validate role at execution time ──
+            // Even if tool selection passed, block execution if role doesn't match.
+            // Prevents privilege escalation if selectTools logic has a bug.
+            if (!tool.allowedRoles.includes(role)) {
+                console.warn(`[TOOL GUARD] Blocked ${toolName} for role=${role}`);
+                results[toolName] = { error: 'Access denied for your role' };
+                return;
+            }
+
             results[toolName] = await tool.execute(role, userId, query);
         } catch (error) {
             results[toolName] = { error: error.message };
@@ -584,6 +595,8 @@ async function callGroq(messages, retries = 2) {
 //
 
 const sendMessage = async (req, res) => {
+    const startTime = req.chatbotMeta?.startTime || Date.now();
+
     try {
         const { message, history } = req.body;
         if (!message || !message.trim()) {
@@ -638,22 +651,122 @@ const sendMessage = async (req, res) => {
         // ── Step 9: Call LLM
         const groqData = await callGroq(messages);
         const reply = groqData.choices[0].message.content.trim();
+        const tokensUsed = groqData.usage?.total_tokens || 0;
 
-        // ── Step 10: Return response with metadata
+        const responseTimeMs = Date.now() - startTime;
+
+        // ── Step 10: Log to observability store (non-blocking) ──
+        ChatbotLog.create({
+            userId,
+            userName: req.user.name,
+            role,
+            message: userMessage,
+            intent,
+            toolsUsed: selectedTools,
+            insightsGenerated: insights.length,
+            ragUsed: !!ragResults?.found,
+            responseTimeMs,
+            tokensUsed,
+            success: true
+        }).catch(err => console.error('[OBSERVABILITY] Log write failed:', err.message));
+
+        console.log(`[CHATBOT] ${role}:${req.user.name} | intent=${intent} | tools=[${selectedTools}] | insights=${insights.length} | rag=${!!ragResults?.found} | ${responseTimeMs}ms | ${tokensUsed} tokens`);
+
+        // ── Step 11: Return response with metadata
         res.status(200).json({
             reply,
             _meta: {
                 intent,
                 toolsUsed: selectedTools,
                 insightsGenerated: insights.length,
-                ragUsed: !!ragResults?.found
+                ragUsed: !!ragResults?.found,
+                responseTimeMs,
+                tokensUsed
             }
         });
 
     } catch (error) {
-        console.error('Chatbot error:', error);
+        const responseTimeMs = Date.now() - startTime;
+        console.error(`[CHATBOT ERROR] ${req.user?.role}:${req.user?.name} | ${responseTimeMs}ms |`, error.message);
+
+        // Log error to observability store (non-blocking)
+        ChatbotLog.create({
+            userId: req.user?._id,
+            userName: req.user?.name || 'unknown',
+            role: req.user?.role || 'unknown',
+            message: req.body?.message || '',
+            responseTimeMs,
+            success: false,
+            error: error.message
+        }).catch(() => {});
+
         res.status(500).json({ message: 'Error getting response', error: error.message });
     }
 };
 
-module.exports = { sendMessage };
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 10. ANALYTICS ENDPOINT — Observability dashboard data
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+const getAnalytics = async (req, res) => {
+    try {
+        const totalLogs = await ChatbotLog.countDocuments();
+        const last24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
+
+        const [
+            intentDistribution,
+            roleDistribution,
+            recentErrors,
+            avgResponseTime,
+            toolUsage,
+            ragUsageCount,
+            dailyCount
+        ] = await Promise.all([
+            // Intent distribution
+            ChatbotLog.aggregate([
+                { $group: { _id: '$intent', count: { $sum: 1 } } },
+                { $sort: { count: -1 } }
+            ]),
+            // Role distribution
+            ChatbotLog.aggregate([
+                { $group: { _id: '$role', count: { $sum: 1 } } }
+            ]),
+            // Recent errors
+            ChatbotLog.find({ success: false })
+                .sort({ createdAt: -1 }).limit(5)
+                .select('userName role message error createdAt'),
+            // Average response time
+            ChatbotLog.aggregate([
+                { $group: { _id: null, avg: { $avg: '$responseTimeMs' }, max: { $max: '$responseTimeMs' } } }
+            ]),
+            // Tool usage frequency
+            ChatbotLog.aggregate([
+                { $unwind: '$toolsUsed' },
+                { $group: { _id: '$toolsUsed', count: { $sum: 1 } } },
+                { $sort: { count: -1 } }
+            ]),
+            // RAG usage count
+            ChatbotLog.countDocuments({ ragUsed: true }),
+            // Messages in last 24h
+            ChatbotLog.countDocuments({ createdAt: { $gte: last24h } })
+        ]);
+
+        res.status(200).json({
+            overview: {
+                totalMessages: totalLogs,
+                messagesLast24h: dailyCount,
+                ragQueries: ragUsageCount,
+                avgResponseTimeMs: Math.round(avgResponseTime[0]?.avg || 0),
+                maxResponseTimeMs: avgResponseTime[0]?.max || 0
+            },
+            intentDistribution,
+            roleDistribution,
+            toolUsage,
+            recentErrors
+        });
+    } catch (error) {
+        res.status(500).json({ message: 'Error fetching analytics', error: error.message });
+    }
+};
+
+module.exports = { sendMessage, getAnalytics };
