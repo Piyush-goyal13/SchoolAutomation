@@ -7,19 +7,48 @@ const Fee = require('../models/Fee');
 const Exam = require('../models/Exam');
 const Notice = require('../models/Notice');
 
-const SYSTEM_PROMPT = `You are TechVeda AI Assistant, an intelligent chatbot integrated into the TechVeda School Automation System. You have access to real school data provided below.
-
-Rules:
-- Answer questions using the SCHOOL DATA provided — always prefer real data over generic advice
-- Keep responses concise (under 200 words unless a detailed breakdown is needed)
-- Use tables, bullet points, and bold for readability
-- If the data doesn't contain what the user asked, say so honestly
-- Be helpful, supportive, and professional
-- You can also answer general academic and school management questions`;
-
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-// Fetch all school data for admin context
+// ─── SYSTEM PROMPTS PER ROLE ───
+
+const ADMIN_SYSTEM_PROMPT = `You are TechVeda AI Assistant for the School Admin. You have FULL access to all school data — students, teachers, fees, attendance, marks, exams, and notices.
+
+Rules:
+- Answer using the SCHOOL DATA provided below — always use real data over generic advice
+- Keep responses concise (under 200 words unless a detailed breakdown is needed)
+- Use tables, bullet points, and bold for readability
+- If the data doesn't have what was asked, say so honestly
+- You can also answer general school management and academic questions`;
+
+const TEACHER_SYSTEM_PROMPT = `You are TechVeda AI Assistant for a Teacher. You can see:
+- Your own profile and assigned section
+- Names of students in YOUR assigned section only (no personal details like parent info, email, or admission numbers)
+- Marks YOU have entered
+- Exams YOU have created
+- Attendance for YOUR section
+- Notices visible to teachers
+
+STRICT RULES:
+- You CANNOT see or reveal other teachers' data, student personal details (parent info, contact, email, admission numbers), fee records, or data from other sections
+- If asked about other teachers, student personal info, or fees, say "I don't have access to that information. Please contact the admin."
+- Keep responses concise and helpful
+- You can also answer general academic and teaching questions`;
+
+const STUDENT_SYSTEM_PROMPT = `You are TechVeda AI Assistant for a Student. You can ONLY see:
+- Your own profile information
+- Your own attendance records and percentage
+- Your own marks and performance
+- Your own fee status
+- Notices addressed to you
+
+STRICT RULES:
+- You CANNOT see or reveal ANY other student's data, teacher personal data, fee details of others, or admin information
+- If asked about other students, teachers, or school-wide data, say "I can only help with your own academic information. Please contact the admin for school-wide queries."
+- Keep responses concise, encouraging, and helpful
+- You can also answer general academic questions, study tips, and exam preparation advice`;
+
+// ─── DATA FETCHERS PER ROLE ───
+
 const fetchAdminContext = async () => {
     const [students, teachers, fees, attendance, marks, exams, notices] = await Promise.all([
         Student.find().populate('userId', 'name email'),
@@ -66,12 +95,11 @@ const fetchAdminContext = async () => {
         studentAttendance[name].total++;
     });
 
-    // Find students with low attendance (below 75%)
     const lowAttendance = Object.entries(studentAttendance)
         .filter(([, s]) => s.total > 0 && (s.present / s.total) < 0.75)
         .map(([name, s]) => ({ name, class: s.class, section: s.section, percentage: Math.round((s.present / s.total) * 100) }));
 
-    // Marks summary — average by class/subject
+    // Marks summary
     const marksSummary = {};
     marks.forEach(m => {
         const key = `${m.class}-${m.section}-${m.subject}-${m.examType}`;
@@ -84,7 +112,6 @@ const fetchAdminContext = async () => {
         }
     });
 
-    // Teacher list
     const teacherList = teachers.map(t => ({
         name: t.userId?.name || 'Unknown',
         email: t.userId?.email || '',
@@ -93,7 +120,6 @@ const fetchAdminContext = async () => {
         assignedSection: t.assignedSection
     }));
 
-    // Student list
     const studentList = students.map(s => ({
         name: s.userId?.name || 'Unknown',
         email: s.userId?.email || '',
@@ -104,7 +130,6 @@ const fetchAdminContext = async () => {
         parentContact: s.parentContact
     }));
 
-    // Exam summary
     const examSummary = exams.map(e => ({
         title: e.title,
         subject: e.subject,
@@ -116,7 +141,6 @@ const fetchAdminContext = async () => {
         submissions: e.submissions?.length || 0
     }));
 
-    // Recent notices
     const recentNotices = notices.map(n => ({
         title: n.title,
         content: n.content.slice(0, 100),
@@ -127,17 +151,17 @@ const fetchAdminContext = async () => {
     }));
 
     return `
-=== SCHOOL DATA (Real-time from Database) ===
+=== SCHOOL DATA (Admin — Full Access) ===
 
 OVERVIEW:
 - Total Students: ${students.length}
 - Total Teachers: ${teachers.length}
-- Classes with students: ${Object.keys(classSummary).join(', ')}
+- Classes: ${Object.keys(classSummary).join(', ')}
 
 STUDENTS BY CLASS:
 ${Object.entries(classSummary).map(([key, names]) => `  ${key}: ${names.length} students (${names.join(', ')})`).join('\n')}
 
-ALL STUDENTS:
+ALL STUDENTS (with personal details):
 ${studentList.map(s => `  - ${s.name} | ${s.email} | ${s.class}-${s.section} | Adm: ${s.admissionNumber} | Parent: ${s.parentName} (${s.parentContact})`).join('\n')}
 
 ALL TEACHERS:
@@ -146,81 +170,117 @@ ${teacherList.map(t => `  - ${t.name} | ${t.email} | Subject: ${t.subject} | Ass
 FEE SUMMARY:
 - Paid: ${feeStats.paid} | Unpaid: ${feeStats.unpaid} | Partial: ${feeStats.partial}
 - Total Collected: ₹${feeStats.totalCollected} | Total Pending: ₹${feeStats.totalPending}
-${unpaidStudents.length > 0 ? `- Students with unpaid fees:\n${unpaidStudents.map(u => `    ${u.name} (${u.class}-${u.section}) — Month ${u.month}/${u.year} — ₹${u.amount}`).join('\n')}` : '- No unpaid fees!'}
+${unpaidStudents.length > 0 ? `- Unpaid:\n${unpaidStudents.map(u => `    ${u.name} (${u.class}-${u.section}) — Month ${u.month}/${u.year} — ₹${u.amount}`).join('\n')}` : '- No unpaid fees!'}
 
-ATTENDANCE SUMMARY:
-- Total Records: ${attendanceStats.total} | Present: ${attendanceStats.present} | Absent: ${attendanceStats.absent} | Late: ${attendanceStats.late}
-- Overall Attendance Rate: ${attendanceStats.total > 0 ? Math.round((attendanceStats.present / attendanceStats.total) * 100) : 0}%
-${lowAttendance.length > 0 ? `- Students with LOW attendance (<75%):\n${lowAttendance.map(s => `    ${s.name} (${s.class}-${s.section}) — ${s.percentage}%`).join('\n')}` : '- All students have good attendance (≥75%)'}
+ATTENDANCE:
+- Records: ${attendanceStats.total} | Present: ${attendanceStats.present} | Absent: ${attendanceStats.absent} | Late: ${attendanceStats.late}
+- Rate: ${attendanceStats.total > 0 ? Math.round((attendanceStats.present / attendanceStats.total) * 100) : 0}%
+${lowAttendance.length > 0 ? `- Low attendance (<75%):\n${lowAttendance.map(s => `    ${s.name} (${s.class}-${s.section}) — ${s.percentage}%`).join('\n')}` : '- All above 75%'}
 
-MARKS/PERFORMANCE:
-${Object.entries(marksSummary).map(([key, v]) => `  ${key}: Avg ${Math.round(v.total / v.count)}/${marks[0]?.totalMarks || 'N/A'} | Top: ${v.topStudent} (${v.topMarks})`).join('\n') || '  No marks recorded yet'}
+MARKS:
+${Object.entries(marksSummary).map(([key, v]) => `  ${key}: Avg ${Math.round(v.total / v.count)} | Top: ${v.topStudent} (${v.topMarks})`).join('\n') || '  No marks yet'}
 
 EXAMS:
-${examSummary.length > 0 ? examSummary.map(e => `  - "${e.title}" (${e.subject}) | ${e.class}-${e.section} | By: ${e.teacher} | Scheduled: ${new Date(e.scheduledAt).toLocaleDateString()} | Submissions: ${e.submissions}`).join('\n') : '  No exams created yet'}
+${examSummary.length > 0 ? examSummary.map(e => `  - "${e.title}" (${e.subject}) | ${e.class}-${e.section} | By: ${e.teacher} | ${new Date(e.scheduledAt).toLocaleDateString()} | ${e.submissions} submissions`).join('\n') : '  None yet'}
 
 RECENT NOTICES:
-${recentNotices.length > 0 ? recentNotices.map(n => `  - [${n.priority.toUpperCase()}] "${n.title}" by ${n.postedBy} | Audience: ${n.audience} | ${new Date(n.date).toLocaleDateString()}`).join('\n') : '  No notices posted yet'}
+${recentNotices.length > 0 ? recentNotices.map(n => `  - [${n.priority.toUpperCase()}] "${n.title}" by ${n.postedBy} | ${n.audience} | ${new Date(n.date).toLocaleDateString()}`).join('\n') : '  None yet'}
 
 === END SCHOOL DATA ===`;
 };
 
-// Fetch data for teacher context
 const fetchTeacherContext = async (userId) => {
     const teacher = await Teacher.findOne({ userId }).populate('userId', 'name');
     if (!teacher) return '\nNo teacher profile found.';
 
-    const [students, attendance, marks, exams] = await Promise.all([
-        teacher.assignedClass ? Student.find({ class: teacher.assignedClass, section: teacher.assignedSection }).populate('userId', 'name email') : Promise.resolve([]),
-        teacher.assignedClass ? Attendance.find({ class: teacher.assignedClass, section: teacher.assignedSection }).populate('studentId', 'name') : Promise.resolve([]),
+    const myClass = teacher.assignedClass;
+    const mySection = teacher.assignedSection;
+
+    const [sectionStudents, myMarks, myExams, sectionAttendance, notices] = await Promise.all([
+        myClass ? Student.find({ class: myClass, section: mySection }).populate('userId', 'name') : Promise.resolve([]),
         Marks.find({ teacherId: userId }).populate('studentId', 'name'),
-        Exam.find({ teacherId: userId }).select('-questions')
+        Exam.find({ teacherId: userId }).select('-questions'),
+        myClass ? Attendance.find({ class: myClass, section: mySection }).populate('studentId', 'name') : Promise.resolve([]),
+        Notice.find({ $or: [{ audience: 'all' }, { audience: 'teachers' }] }).sort({ createdAt: -1 }).limit(5).populate('postedBy', 'name')
     ]);
 
-    const studentList = students.map(s => `  - ${s.userId?.name} | ${s.class}-${s.section}`).join('\n');
+    // Section attendance stats
+    const attendanceStats = { total: sectionAttendance.length, present: 0, absent: 0, late: 0 };
+    sectionAttendance.forEach(a => { attendanceStats[a.status]++; });
+
+    // Marks summary (only marks entered by this teacher)
+    const marksBreakdown = {};
+    myMarks.forEach(m => {
+        const key = `${m.subject}-${m.examType}`;
+        if (!marksBreakdown[key]) marksBreakdown[key] = { total: 0, count: 0 };
+        marksBreakdown[key].total += m.marksObtained;
+        marksBreakdown[key].count++;
+    });
 
     return `
-=== YOUR TEACHING DATA ===
-Teacher: ${teacher.userId?.name} | Subject: ${teacher.subject} | Assigned: ${teacher.assignedClass || 'None'}-${teacher.assignedSection || 'None'}
+=== YOUR TEACHING DATA (Teacher — Limited Access) ===
+Name: ${teacher.userId?.name} | Subject: ${teacher.subject} | Assigned: ${myClass || 'None'}-${mySection || 'None'}
 
-YOUR STUDENTS (${students.length}):
-${studentList || '  No students assigned'}
+YOUR SECTION STUDENTS (names only — ${sectionStudents.length} students):
+${sectionStudents.map(s => `  - ${s.userId?.name}`).join('\n') || '  No students assigned'}
 
-MARKS ENTERED BY YOU: ${marks.length} records
-EXAMS CREATED: ${exams.length}
-ATTENDANCE RECORDS: ${attendance.length}
+YOUR SECTION ATTENDANCE:
+- Records: ${attendanceStats.total} | Present: ${attendanceStats.present} | Absent: ${attendanceStats.absent} | Late: ${attendanceStats.late}
+
+YOUR MARKS ENTERED (${myMarks.length} records):
+${Object.entries(marksBreakdown).map(([key, v]) => `  ${key}: ${v.count} students, Avg: ${Math.round(v.total / v.count)}`).join('\n') || '  None yet'}
+
+YOUR EXAMS CREATED: ${myExams.length}
+${myExams.map(e => `  - "${e.title}" | ${e.class}-${e.section} | ${new Date(e.scheduledAt).toLocaleDateString()} | ${e.submissions?.length || 0} submissions`).join('\n') || ''}
+
+RECENT NOTICES (for teachers):
+${notices.map(n => `  - [${n.priority.toUpperCase()}] "${n.title}" by ${n.postedBy?.name} | ${new Date(n.createdAt).toLocaleDateString()}`).join('\n') || '  None'}
+
+NOTE: You do NOT have access to other teachers' data, student personal details, fee records, or other sections' data.
 === END DATA ===`;
 };
 
-// Fetch data for student context
 const fetchStudentContext = async (userId) => {
     const student = await Student.findOne({ userId }).populate('userId', 'name');
     if (!student) return '\nNo student profile found.';
 
-    const [attendance, marks, fees] = await Promise.all([
+    const [attendance, marks, fees, notices] = await Promise.all([
         Attendance.find({ studentId: userId }),
         Marks.find({ studentId: userId }),
-        Fee.find({ studentId: userId })
+        Fee.find({ studentId: userId }),
+        Notice.find({ $or: [{ audience: 'all' }, { audience: 'students' }, { audience: 'section', targetClass: student.class, targetSection: student.section }] }).sort({ createdAt: -1 }).limit(5).populate('postedBy', 'name')
     ]);
 
-    const attendanceRate = attendance.length > 0
-        ? Math.round((attendance.filter(a => a.status === 'present').length / attendance.length) * 100)
-        : 0;
+    const attendanceStats = { total: attendance.length, present: 0, absent: 0, late: 0 };
+    attendance.forEach(a => { attendanceStats[a.status]++; });
+    const attendanceRate = attendanceStats.total > 0 ? Math.round((attendanceStats.present / attendanceStats.total) * 100) : 0;
 
-    const marksStr = marks.map(m => `  - ${m.subject} (${m.examType}): ${m.marksObtained}/${m.totalMarks}`).join('\n');
-    const feeStr = fees.map(f => `  - Month ${f.month}/${f.year}: ₹${f.totalAmount} — ${f.status}`).join('\n');
+    const totalFee = fees.reduce((s, f) => s + f.totalAmount, 0);
+    const totalPaid = fees.reduce((s, f) => s + f.paidAmount, 0);
 
     return `
-=== YOUR STUDENT DATA ===
+=== YOUR DATA (Student — Personal Access Only) ===
 Name: ${student.userId?.name} | Class: ${student.class}-${student.section} | Admission: ${student.admissionNumber}
 
-ATTENDANCE: ${attendance.length} days tracked | Rate: ${attendanceRate}%
-MARKS:
-${marksStr || '  No marks yet'}
-FEES:
-${feeStr || '  No fee records'}
+YOUR ATTENDANCE:
+- Days Tracked: ${attendanceStats.total} | Present: ${attendanceStats.present} | Absent: ${attendanceStats.absent} | Late: ${attendanceStats.late}
+- Attendance Rate: ${attendanceRate}%
+
+YOUR MARKS:
+${marks.map(m => `  - ${m.subject} (${m.examType}): ${m.marksObtained}/${m.totalMarks} (${Math.round((m.marksObtained / m.totalMarks) * 100)}%)`).join('\n') || '  No marks yet'}
+
+YOUR FEES:
+- Total: ₹${totalFee} | Paid: ₹${totalPaid} | Pending: ₹${totalFee - totalPaid}
+${fees.map(f => `  - Month ${f.month}/${f.year}: ₹${f.totalAmount} — ${f.status}`).join('\n') || '  No fee records'}
+
+YOUR NOTICES:
+${notices.map(n => `  - [${n.priority.toUpperCase()}] "${n.title}" by ${n.postedBy?.name} | ${new Date(n.createdAt).toLocaleDateString()}`).join('\n') || '  None'}
+
+NOTE: You can ONLY see your own data. You do NOT have access to other students' records, teacher information, or school-wide reports.
 === END DATA ===`;
 };
+
+// ─── GROQ API CALL WITH RETRY ───
 
 const callGroq = async (messages, retries = 2) => {
     for (let attempt = 0; attempt <= retries; attempt++) {
@@ -241,9 +301,8 @@ const callGroq = async (messages, retries = 2) => {
         const groqData = await groqRes.json();
 
         if (groqRes.status === 429 && attempt < retries) {
-            const waitTime = 5000;
-            console.log(`Rate limited, retrying in ${waitTime / 1000}s... (attempt ${attempt + 1})`);
-            await sleep(waitTime);
+            console.log(`Rate limited, retrying in 5s... (attempt ${attempt + 1})`);
+            await sleep(5000);
             continue;
         }
 
@@ -255,6 +314,8 @@ const callGroq = async (messages, retries = 2) => {
     }
 };
 
+// ─── MAIN HANDLER ───
+
 const sendMessage = async (req, res) => {
     try {
         const { message, history } = req.body;
@@ -263,26 +324,27 @@ const sendMessage = async (req, res) => {
             return res.status(400).json({ message: 'Message is required' });
         }
 
-        // Fetch role-specific school data
-        let schoolData = '';
         const role = req.user.role;
+        let systemPrompt = '';
+        let schoolData = '';
 
         if (role === 'admin') {
+            systemPrompt = ADMIN_SYSTEM_PROMPT;
             schoolData = await fetchAdminContext();
         } else if (role === 'teacher') {
+            systemPrompt = TEACHER_SYSTEM_PROMPT;
             schoolData = await fetchTeacherContext(req.user._id);
         } else if (role === 'student') {
+            systemPrompt = STUDENT_SYSTEM_PROMPT;
             schoolData = await fetchStudentContext(req.user._id);
         }
 
-        // Build messages with school data injected into system prompt
         const messages = [
-            { role: 'system', content: SYSTEM_PROMPT + '\n' + schoolData }
+            { role: 'system', content: systemPrompt + '\n' + schoolData }
         ];
 
         if (history && Array.isArray(history)) {
-            const recentHistory = history.slice(-10);
-            messages.push(...recentHistory);
+            messages.push(...history.slice(-10));
         }
 
         messages.push({ role: 'user', content: message.trim() });
