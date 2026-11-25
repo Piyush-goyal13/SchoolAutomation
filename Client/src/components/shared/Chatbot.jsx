@@ -2,9 +2,16 @@ import React, { useState, useRef, useEffect } from 'react';
 import API from '../../api/axious';
 import './Chatbot.css';
 
+const ROLE_GREETINGS = {
+    admin: "Hi Admin! 👋 I'm TechVeda AI — your intelligent school management assistant.\n\n**What I can do:**\n- 📊 **Data Queries** — Ask about students, teachers, fees, attendance, marks\n- 🔮 **Predictive Insights** — At-risk students, performance trends, fee analytics\n- 📚 **Knowledge Base (RAG)** — School policies, rules, procedures, guidelines\n- 💬 **General Chat** — Academic questions, management advice\n\nTry: *\"Which students have attendance below 65%?\"* or *\"What is the fee policy?\"*",
+    teacher: "Hi Teacher! 👋 I'm TechVeda AI — your teaching assistant.\n\n**What I can do:**\n- 📋 **Your Section** — View your students, attendance, marks\n- 🧠 **Exam Info** — Your created exams and results\n- 📚 **School Policies** — Rules, guidelines, procedures\n- 💬 **Academic Help** — Subject questions, teaching tips\n\nTry: *\"How is my section's attendance?\"* or *\"What is the exam grading system?\"*",
+    student: "Hi! 👋 I'm TechVeda AI — your personal study assistant.\n\n**What I can do:**\n- 📊 **Your Performance** — Attendance, marks, fees status\n- 📚 **School Info** — Policies, rules, exam guidelines\n- 🎓 **Academic Help** — Explain concepts, study tips, exam prep\n- 💬 **General Questions** — Anything school-related\n\nTry: *\"What's my attendance percentage?\"* or *\"Give me tips for exam preparation\"*"
+};
+
 const Chatbot = () => {
+    const role = localStorage.getItem('role') || 'student';
     const [messages, setMessages] = useState([
-        { role: 'assistant', content: 'Hi! 👋 I\'m TechVeda AI Assistant. Ask me anything — academics, study tips, exam prep, or any school-related question. How can I help you today?' }
+        { role: 'assistant', content: ROLE_GREETINGS[role] || ROLE_GREETINGS.student }
     ]);
     const [input, setInput] = useState('');
     const [loading, setLoading] = useState(false);
@@ -30,7 +37,6 @@ const Chatbot = () => {
         setLoading(true);
 
         try {
-            // Send conversation history (exclude the initial greeting)
             const history = messages.filter((_, i) => i > 0).map(m => ({
                 role: m.role,
                 content: m.content
@@ -41,7 +47,22 @@ const Chatbot = () => {
                 history
             });
 
-            setMessages(prev => [...prev, { role: 'assistant', content: res.data.reply }]);
+            const meta = res.data._meta;
+            let reply = res.data.reply;
+
+            // Add pipeline metadata as a subtle footer
+            if (meta) {
+                const badges = [];
+                if (meta.intent) badges.push(`🧠 ${meta.intent}`);
+                if (meta.toolsUsed?.length > 0) badges.push(`🔧 ${meta.toolsUsed.length} tool(s)`);
+                if (meta.insightsGenerated > 0) badges.push(`📊 ${meta.insightsGenerated} insight(s)`);
+                if (meta.ragUsed) badges.push('📚 RAG');
+                if (badges.length > 0) {
+                    reply += `\n\n---\n*${badges.join(' • ')}*`;
+                }
+            }
+
+            setMessages(prev => [...prev, { role: 'assistant', content: reply }]);
         } catch (err) {
             setMessages(prev => [...prev, {
                 role: 'assistant',
@@ -55,16 +76,16 @@ const Chatbot = () => {
 
     const handleClear = () => {
         setMessages([
-            { role: 'assistant', content: 'Chat cleared! What would you like to talk about?' }
+            { role: 'assistant', content: ROLE_GREETINGS[role] || ROLE_GREETINGS.student }
         ]);
     };
 
     const formatMessage = (text) => {
-        // Basic markdown-like formatting
         return text
             .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
             .replace(/\*(.*?)\*/g, '<em>$1</em>')
             .replace(/`(.*?)`/g, '<code>$1</code>')
+            .replace(/^---$/gm, '<hr/>')
             .replace(/\n/g, '<br/>');
     };
 
@@ -75,7 +96,7 @@ const Chatbot = () => {
                     <div className="cb-avatar">🤖</div>
                     <div>
                         <h2>TechVeda AI Assistant</h2>
-                        <p>Ask anything about academics, study tips, or school</p>
+                        <p>Powered by AI Agent • RAG • Predictive Analytics</p>
                     </div>
                 </div>
                 <button className="cb-clear-btn" onClick={handleClear}>🗑️ Clear Chat</button>
@@ -114,7 +135,7 @@ const Chatbot = () => {
                     type="text"
                     value={input}
                     onChange={e => setInput(e.target.value)}
-                    placeholder="Type your message..."
+                    placeholder="Ask about data, policies, academics, or insights..."
                     disabled={loading}
                     autoFocus
                 />

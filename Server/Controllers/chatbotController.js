@@ -6,283 +6,537 @@ const Marks = require('../models/Marks');
 const Fee = require('../models/Fee');
 const Exam = require('../models/Exam');
 const Notice = require('../models/Notice');
+const KnowledgeBase = require('../models/KnowledgeBase');
 
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-// ─── SYSTEM PROMPTS PER ROLE ───
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 1. TOOL DEFINITIONS — Agent's available capabilities
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-const ADMIN_SYSTEM_PROMPT = `You are TechVeda AI Assistant for the School Admin. You have FULL access to all school data — students, teachers, fees, attendance, marks, exams, and notices.
-
-Rules:
-- Answer using the SCHOOL DATA provided below — always use real data over generic advice
-- Keep responses concise (under 200 words unless a detailed breakdown is needed)
-- Use tables, bullet points, and bold for readability
-- If the data doesn't have what was asked, say so honestly
-- You can also answer general school management and academic questions`;
-
-const TEACHER_SYSTEM_PROMPT = `You are TechVeda AI Assistant for a Teacher. You can see:
-- Your own profile and assigned section
-- Names of students in YOUR assigned section only (no personal details like parent info, email, or admission numbers)
-- Marks YOU have entered
-- Exams YOU have created
-- Attendance for YOUR section
-- Notices visible to teachers
-
-STRICT RULES:
-- You CANNOT see or reveal other teachers' data, student personal details (parent info, contact, email, admission numbers), fee records, or data from other sections
-- If asked about other teachers, student personal info, or fees, say "I don't have access to that information. Please contact the admin."
-- Keep responses concise and helpful
-- You can also answer general academic and teaching questions`;
-
-const STUDENT_SYSTEM_PROMPT = `You are TechVeda AI Assistant for a Student. You can ONLY see:
-- Your own profile information
-- Your own attendance records and percentage
-- Your own marks and performance
-- Your own fee status
-- Notices addressed to you
-
-STRICT RULES:
-- You CANNOT see or reveal ANY other student's data, teacher personal data, fee details of others, or admin information
-- If asked about other students, teachers, or school-wide data, say "I can only help with your own academic information. Please contact the admin for school-wide queries."
-- Keep responses concise, encouraging, and helpful
-- You can also answer general academic questions, study tips, and exam preparation advice`;
-
-// ─── DATA FETCHERS PER ROLE ───
-
-const fetchAdminContext = async () => {
-    const [students, teachers, fees, attendance, marks, exams, notices] = await Promise.all([
-        Student.find().populate('userId', 'name email'),
-        Teacher.find().populate('userId', 'name email'),
-        Fee.find().populate('studentId', 'name'),
-        Attendance.find().populate('studentId', 'name'),
-        Marks.find().populate('studentId', 'name').populate('teacherId', 'name'),
-        Exam.find().select('-questions').populate('teacherId', 'name'),
-        Notice.find().sort({ createdAt: -1 }).limit(10).populate('postedBy', 'name')
-    ]);
-
-    // Student summary by class/section
-    const classSummary = {};
-    students.forEach(s => {
-        const key = `${s.class}-${s.section}`;
-        if (!classSummary[key]) classSummary[key] = [];
-        classSummary[key].push(s.userId?.name || 'Unknown');
-    });
-
-    // Fee summary
-    const feeStats = { paid: 0, unpaid: 0, partial: 0, totalCollected: 0, totalPending: 0 };
-    const unpaidStudents = [];
-    fees.forEach(f => {
-        feeStats[f.status]++;
-        if (f.status === 'paid') feeStats.totalCollected += f.paidAmount;
-        if (f.status === 'unpaid') {
-            feeStats.totalPending += f.totalAmount;
-            unpaidStudents.push({ name: f.studentId?.name || 'Unknown', class: f.class, section: f.section, month: f.month, year: f.year, amount: f.totalAmount });
+const TOOLS = {
+    getStudentData: {
+        description: 'Fetch student records with personal details',
+        keywords: ['student', 'students', 'class', 'section', 'admission', 'parent', 'enroll'],
+        allowedRoles: ['admin'],
+        execute: async () => {
+            const students = await Student.find().populate('userId', 'name email');
+            return students.map(s => ({
+                name: s.userId?.name, email: s.userId?.email,
+                class: s.class, section: s.section,
+                admissionNumber: s.admissionNumber,
+                parentName: s.parentName, parentContact: s.parentContact
+            }));
         }
-        if (f.status === 'partial') {
-            feeStats.totalCollected += f.paidAmount;
-            feeStats.totalPending += (f.totalAmount - f.paidAmount);
+    },
+
+    getTeacherData: {
+        description: 'Fetch teacher records with assignments',
+        keywords: ['teacher', 'teachers', 'faculty', 'staff', 'subject'],
+        allowedRoles: ['admin'],
+        execute: async () => {
+            const teachers = await Teacher.find().populate('userId', 'name email');
+            return teachers.map(t => ({
+                name: t.userId?.name, email: t.userId?.email,
+                subject: t.subject,
+                assignedClass: t.assignedClass, assignedSection: t.assignedSection
+            }));
         }
-    });
+    },
 
-    // Attendance summary
-    const attendanceStats = { total: attendance.length, present: 0, absent: 0, late: 0 };
-    const studentAttendance = {};
-    attendance.forEach(a => {
-        attendanceStats[a.status]++;
-        const name = a.studentId?.name || 'Unknown';
-        if (!studentAttendance[name]) studentAttendance[name] = { present: 0, absent: 0, late: 0, total: 0, class: a.class, section: a.section };
-        studentAttendance[name][a.status]++;
-        studentAttendance[name].total++;
-    });
+    getAttendanceData: {
+        description: 'Fetch attendance records and statistics',
+        keywords: ['attendance', 'absent', 'present', 'late', 'absent'],
+        allowedRoles: ['admin', 'teacher', 'student'],
+        execute: async (role, userId) => {
+            let records;
+            if (role === 'admin') {
+                records = await Attendance.find().populate('studentId', 'name');
+            } else if (role === 'teacher') {
+                const teacher = await Teacher.findOne({ userId });
+                if (!teacher?.assignedClass) return { records: [], message: 'No section assigned' };
+                records = await Attendance.find({ class: teacher.assignedClass, section: teacher.assignedSection }).populate('studentId', 'name');
+            } else {
+                records = await Attendance.find({ studentId: userId }).populate('studentId', 'name');
+            }
 
-    const lowAttendance = Object.entries(studentAttendance)
-        .filter(([, s]) => s.total > 0 && (s.present / s.total) < 0.75)
-        .map(([name, s]) => ({ name, class: s.class, section: s.section, percentage: Math.round((s.present / s.total) * 100) }));
+            const stats = { total: records.length, present: 0, absent: 0, late: 0 };
+            const perStudent = {};
+            records.forEach(r => {
+                stats[r.status]++;
+                const name = r.studentId?.name || 'Unknown';
+                if (!perStudent[name]) perStudent[name] = { present: 0, absent: 0, late: 0, total: 0, class: r.class, section: r.section };
+                perStudent[name][r.status]++;
+                perStudent[name].total++;
+            });
 
-    // Marks summary
-    const marksSummary = {};
-    marks.forEach(m => {
-        const key = `${m.class}-${m.section}-${m.subject}-${m.examType}`;
-        if (!marksSummary[key]) marksSummary[key] = { total: 0, count: 0, topStudent: '', topMarks: 0 };
-        marksSummary[key].total += m.marksObtained;
-        marksSummary[key].count++;
-        if (m.marksObtained > marksSummary[key].topMarks) {
-            marksSummary[key].topMarks = m.marksObtained;
-            marksSummary[key].topStudent = m.studentId?.name || 'Unknown';
+            return { stats, perStudent };
         }
-    });
+    },
 
-    const teacherList = teachers.map(t => ({
-        name: t.userId?.name || 'Unknown',
-        email: t.userId?.email || '',
-        subject: t.subject,
-        assignedClass: t.assignedClass,
-        assignedSection: t.assignedSection
-    }));
+    getFeesData: {
+        description: 'Fetch fee records and payment status',
+        keywords: ['fee', 'fees', 'payment', 'paid', 'unpaid', 'dues', 'pending', 'collect'],
+        allowedRoles: ['admin', 'student'],
+        execute: async (role, userId) => {
+            let fees;
+            if (role === 'admin') {
+                fees = await Fee.find().populate('studentId', 'name');
+            } else {
+                fees = await Fee.find({ studentId: userId });
+            }
 
-    const studentList = students.map(s => ({
-        name: s.userId?.name || 'Unknown',
-        email: s.userId?.email || '',
-        class: s.class,
-        section: s.section,
-        admissionNumber: s.admissionNumber,
-        parentName: s.parentName,
-        parentContact: s.parentContact
-    }));
+            const summary = { paid: 0, unpaid: 0, partial: 0, totalCollected: 0, totalPending: 0 };
+            const unpaidList = [];
+            fees.forEach(f => {
+                summary[f.status]++;
+                if (f.status === 'paid') summary.totalCollected += f.paidAmount;
+                if (f.status === 'unpaid') {
+                    summary.totalPending += f.totalAmount;
+                    unpaidList.push({ name: f.studentId?.name || 'N/A', class: f.class, section: f.section, month: f.month, year: f.year, amount: f.totalAmount });
+                }
+                if (f.status === 'partial') {
+                    summary.totalCollected += f.paidAmount;
+                    summary.totalPending += (f.totalAmount - f.paidAmount);
+                }
+            });
 
-    const examSummary = exams.map(e => ({
-        title: e.title,
-        subject: e.subject,
-        class: e.class,
-        section: e.section,
-        teacher: e.teacherId?.name || 'Unknown',
-        scheduledAt: e.scheduledAt,
-        totalMarks: e.totalMarks,
-        submissions: e.submissions?.length || 0
-    }));
+            return { summary, unpaidList, records: fees.length };
+        }
+    },
 
-    const recentNotices = notices.map(n => ({
-        title: n.title,
-        content: n.content.slice(0, 100),
-        postedBy: n.postedBy?.name || 'Unknown',
-        audience: n.audience,
-        priority: n.priority,
-        date: n.createdAt
-    }));
+    getMarksData: {
+        description: 'Fetch marks and academic performance data',
+        keywords: ['marks', 'score', 'performance', 'grade', 'topper', 'result', 'academic', 'rank'],
+        allowedRoles: ['admin', 'teacher', 'student'],
+        execute: async (role, userId) => {
+            let marks;
+            if (role === 'admin') {
+                marks = await Marks.find().populate('studentId', 'name').populate('teacherId', 'name');
+            } else if (role === 'teacher') {
+                marks = await Marks.find({ teacherId: userId }).populate('studentId', 'name');
+            } else {
+                marks = await Marks.find({ studentId: userId });
+            }
 
-    return `
-=== SCHOOL DATA (Admin — Full Access) ===
+            // Aggregate by class-subject-examType
+            const byExam = {};
+            marks.forEach(m => {
+                const key = `${m.class}-${m.section} ${m.subject} (${m.examType})`;
+                if (!byExam[key]) byExam[key] = { scores: [], top: { name: '', marks: 0 } };
+                byExam[key].scores.push(m.marksObtained);
+                if (m.marksObtained > byExam[key].top.marks) {
+                    byExam[key].top = { name: m.studentId?.name || 'Unknown', marks: m.marksObtained };
+                }
+            });
 
-OVERVIEW:
-- Total Students: ${students.length}
-- Total Teachers: ${teachers.length}
-- Classes: ${Object.keys(classSummary).join(', ')}
+            const summary = Object.entries(byExam).map(([key, v]) => ({
+                exam: key,
+                average: Math.round(v.scores.reduce((a, b) => a + b, 0) / v.scores.length),
+                highest: Math.max(...v.scores),
+                lowest: Math.min(...v.scores),
+                topper: v.top.name,
+                count: v.scores.length
+            }));
 
-STUDENTS BY CLASS:
-${Object.entries(classSummary).map(([key, names]) => `  ${key}: ${names.length} students (${names.join(', ')})`).join('\n')}
+            return { summary, totalRecords: marks.length };
+        }
+    },
 
-ALL STUDENTS (with personal details):
-${studentList.map(s => `  - ${s.name} | ${s.email} | ${s.class}-${s.section} | Adm: ${s.admissionNumber} | Parent: ${s.parentName} (${s.parentContact})`).join('\n')}
+    getExamData: {
+        description: 'Fetch exam schedules and results',
+        keywords: ['exam', 'test', 'quiz', 'mcq', 'schedule', 'live'],
+        allowedRoles: ['admin', 'teacher', 'student'],
+        execute: async (role, userId) => {
+            let exams;
+            if (role === 'admin') {
+                exams = await Exam.find().select('-questions').populate('teacherId', 'name');
+            } else if (role === 'teacher') {
+                exams = await Exam.find({ teacherId: userId }).select('-questions');
+            } else {
+                const student = await Student.findOne({ userId });
+                if (!student) return [];
+                exams = await Exam.find({ class: student.class, section: student.section }).select('-questions').populate('teacherId', 'name');
+            }
 
-ALL TEACHERS:
-${teacherList.map(t => `  - ${t.name} | ${t.email} | Subject: ${t.subject} | Assigned: ${t.assignedClass || 'None'}-${t.assignedSection || 'None'}`).join('\n')}
+            return exams.map(e => ({
+                title: e.title, subject: e.subject,
+                class: e.class, section: e.section,
+                teacher: e.teacherId?.name, scheduledAt: e.scheduledAt,
+                totalMarks: e.totalMarks, submissions: e.submissions?.length || 0
+            }));
+        }
+    },
 
-FEE SUMMARY:
-- Paid: ${feeStats.paid} | Unpaid: ${feeStats.unpaid} | Partial: ${feeStats.partial}
-- Total Collected: ₹${feeStats.totalCollected} | Total Pending: ₹${feeStats.totalPending}
-${unpaidStudents.length > 0 ? `- Unpaid:\n${unpaidStudents.map(u => `    ${u.name} (${u.class}-${u.section}) — Month ${u.month}/${u.year} — ₹${u.amount}`).join('\n')}` : '- No unpaid fees!'}
+    getNoticeData: {
+        description: 'Fetch notices and announcements',
+        keywords: ['notice', 'announcement', 'circular', 'update'],
+        allowedRoles: ['admin', 'teacher', 'student'],
+        execute: async (role, userId) => {
+            let query = {};
+            if (role === 'teacher') {
+                query = { $or: [{ audience: 'all' }, { audience: 'teachers' }] };
+            } else if (role === 'student') {
+                const student = await Student.findOne({ userId });
+                query = {
+                    $or: [
+                        { audience: 'all' }, { audience: 'students' },
+                        { audience: 'section', targetClass: student?.class, targetSection: student?.section }
+                    ]
+                };
+            }
 
-ATTENDANCE:
-- Records: ${attendanceStats.total} | Present: ${attendanceStats.present} | Absent: ${attendanceStats.absent} | Late: ${attendanceStats.late}
-- Rate: ${attendanceStats.total > 0 ? Math.round((attendanceStats.present / attendanceStats.total) * 100) : 0}%
-${lowAttendance.length > 0 ? `- Low attendance (<75%):\n${lowAttendance.map(s => `    ${s.name} (${s.class}-${s.section}) — ${s.percentage}%`).join('\n')}` : '- All above 75%'}
+            const notices = await Notice.find(query).sort({ createdAt: -1 }).limit(10).populate('postedBy', 'name');
+            return notices.map(n => ({
+                title: n.title, content: n.content.slice(0, 150),
+                postedBy: n.postedBy?.name, audience: n.audience,
+                priority: n.priority, date: n.createdAt
+            }));
+        }
+    },
 
-MARKS:
-${Object.entries(marksSummary).map(([key, v]) => `  ${key}: Avg ${Math.round(v.total / v.count)} | Top: ${v.topStudent} (${v.topMarks})`).join('\n') || '  No marks yet'}
+    searchKnowledge: {
+        description: 'Search school knowledge base (RAG)',
+        keywords: ['policy', 'rule', 'guideline', 'procedure', 'syllabus', 'calendar', 'conduct', 'uniform', 'leave', 'admission', 'fee structure'],
+        allowedRoles: ['admin', 'teacher', 'student'],
+        execute: async (_role, _userId, query) => {
+            // MongoDB full-text search (RAG retrieval)
+            let docs = [];
+            try {
+                docs = await KnowledgeBase.find(
+                    { $text: { $search: query } },
+                    { score: { $meta: 'textScore' } }
+                ).sort({ score: { $meta: 'textScore' } }).limit(3);
+            } catch (e) {
+                // Fallback: regex search if text index isn't ready
+                const regex = new RegExp(query.split(' ').join('|'), 'i');
+                docs = await KnowledgeBase.find({
+                    $or: [{ title: regex }, { content: regex }, { tags: regex }]
+                }).limit(3);
+            }
 
-EXAMS:
-${examSummary.length > 0 ? examSummary.map(e => `  - "${e.title}" (${e.subject}) | ${e.class}-${e.section} | By: ${e.teacher} | ${new Date(e.scheduledAt).toLocaleDateString()} | ${e.submissions} submissions`).join('\n') : '  None yet'}
+            if (docs.length === 0) return { found: false, message: 'No matching documents in knowledge base' };
 
-RECENT NOTICES:
-${recentNotices.length > 0 ? recentNotices.map(n => `  - [${n.priority.toUpperCase()}] "${n.title}" by ${n.postedBy} | ${n.audience} | ${new Date(n.date).toLocaleDateString()}`).join('\n') : '  None yet'}
-
-=== END SCHOOL DATA ===`;
+            return {
+                found: true,
+                documents: docs.map(d => ({
+                    title: d.title,
+                    category: d.category,
+                    content: d.content
+                }))
+            };
+        }
+    }
 };
 
-const fetchTeacherContext = async (userId) => {
-    const teacher = await Teacher.findOne({ userId }).populate('userId', 'name');
-    if (!teacher) return '\nNo teacher profile found.';
 
-    const myClass = teacher.assignedClass;
-    const mySection = teacher.assignedSection;
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 2. INTENT CLASSIFIER — Determines what the user wants
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// NOTE: Uses keyword-based classification for zero-latency routing.
+// In production, swap with LLM-based classification for nuance:
+//   const intent = await classifyWithLLM(message);
 
-    const [sectionStudents, myMarks, myExams, sectionAttendance, notices] = await Promise.all([
-        myClass ? Student.find({ class: myClass, section: mySection }).populate('userId', 'name') : Promise.resolve([]),
-        Marks.find({ teacherId: userId }).populate('studentId', 'name'),
-        Exam.find({ teacherId: userId }).select('-questions'),
-        myClass ? Attendance.find({ class: myClass, section: mySection }).populate('studentId', 'name') : Promise.resolve([]),
-        Notice.find({ $or: [{ audience: 'all' }, { audience: 'teachers' }] }).sort({ createdAt: -1 }).limit(5).populate('postedBy', 'name')
-    ]);
+const INTENT_PATTERNS = {
+    data_query: {
+        keywords: ['how many', 'list', 'show', 'count', 'total', 'who', 'which', 'get', 'fetch', 'tell me about', 'details of'],
+        subPatterns: ['student', 'teacher', 'fee', 'attendance', 'marks', 'exam', 'notice']
+    },
+    insights: {
+        keywords: ['predict', 'risk', 'trend', 'analysis', 'insight', 'at risk', 'failing', 'improve', 'declining', 'compare', 'comparison', 'best', 'worst', 'top', 'bottom', 'summary', 'overview', 'report', 'analytics']
+    },
+    knowledge: {
+        keywords: ['policy', 'rule', 'guideline', 'procedure', 'calendar', 'schedule', 'syllabus', 'conduct', 'uniform', 'leave', 'admission process', 'fee structure', 'grading system', 'exam rule', 'what is the rule', 'what is the policy', 'how to apply', 'when is']
+    },
+    academic: {
+        keywords: ['explain', 'what is', 'how does', 'solve', 'define', 'calculate', 'formula', 'theorem', 'equation', 'concept', 'difference between', 'example of', 'study tip', 'prepare for']
+    }
+};
 
-    // Section attendance stats
-    const attendanceStats = { total: sectionAttendance.length, present: 0, absent: 0, late: 0 };
-    sectionAttendance.forEach(a => { attendanceStats[a.status]++; });
+function classifyIntent(message) {
+    const lower = message.toLowerCase();
 
-    // Marks summary (only marks entered by this teacher)
-    const marksBreakdown = {};
-    myMarks.forEach(m => {
-        const key = `${m.subject}-${m.examType}`;
-        if (!marksBreakdown[key]) marksBreakdown[key] = { total: 0, count: 0 };
-        marksBreakdown[key].total += m.marksObtained;
-        marksBreakdown[key].count++;
+    // Check insights first (more specific)
+    if (INTENT_PATTERNS.insights.keywords.some(k => lower.includes(k))) {
+        return 'insights';
+    }
+
+    // Check knowledge base queries
+    if (INTENT_PATTERNS.knowledge.keywords.some(k => lower.includes(k))) {
+        return 'knowledge';
+    }
+
+    // Check data queries
+    const hasQueryWord = INTENT_PATTERNS.data_query.keywords.some(k => lower.includes(k));
+    const hasDataSubject = INTENT_PATTERNS.data_query.subPatterns.some(k => lower.includes(k));
+    if (hasQueryWord && hasDataSubject) {
+        return 'data_query';
+    }
+    // Even without query words, if the message is clearly about data
+    if (hasDataSubject && !INTENT_PATTERNS.academic.keywords.some(k => lower.includes(k))) {
+        return 'data_query';
+    }
+
+    // Check academic questions
+    if (INTENT_PATTERNS.academic.keywords.some(k => lower.includes(k))) {
+        return 'academic';
+    }
+
+    return 'general';
+}
+
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 3. TOOL SELECTOR — Picks which tools to execute based on intent
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+function selectTools(intent, message, role) {
+    const lower = message.toLowerCase();
+    const selected = [];
+
+    if (intent === 'knowledge') {
+        selected.push('searchKnowledge');
+        return selected;
+    }
+
+    if (intent === 'academic' || intent === 'general') {
+        // No tools needed — direct LLM response
+        return selected;
+    }
+
+    // For data_query and insights, select relevant tools
+    for (const [toolName, tool] of Object.entries(TOOLS)) {
+        if (toolName === 'searchKnowledge') continue; // handled above
+
+        // Check role access
+        if (!tool.allowedRoles.includes(role)) continue;
+
+        // Check keyword match
+        if (tool.keywords.some(k => lower.includes(k))) {
+            selected.push(toolName);
+        }
+    }
+
+    // For insights, also load attendance + marks + fees if not already selected
+    if (intent === 'insights') {
+        const insightTools = ['getAttendanceData', 'getMarksData'];
+        if (role === 'admin') insightTools.push('getFeesData', 'getStudentData');
+        insightTools.forEach(t => {
+            if (!selected.includes(t) && TOOLS[t].allowedRoles.includes(role)) {
+                selected.push(t);
+            }
+        });
+    }
+
+    // If no specific tools matched but it's a data query, load common ones
+    if (selected.length === 0 && intent === 'data_query') {
+        if (role === 'admin') selected.push('getStudentData', 'getTeacherData');
+        else if (role === 'teacher') selected.push('getAttendanceData', 'getMarksData');
+        else selected.push('getAttendanceData', 'getMarksData', 'getFeesData');
+    }
+
+    return selected;
+}
+
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 4. TOOL EXECUTOR — Runs selected tools in parallel
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+async function executeTools(selectedTools, role, userId, query) {
+    const results = {};
+
+    await Promise.all(selectedTools.map(async (toolName) => {
+        try {
+            const tool = TOOLS[toolName];
+            results[toolName] = await tool.execute(role, userId, query);
+        } catch (error) {
+            results[toolName] = { error: error.message };
+        }
+    }));
+
+    return results;
+}
+
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 5. INSIGHTS ENGINE — Generates predictive analytics from data
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+function generateInsights(toolResults) {
+    const insights = [];
+
+    // ── At-Risk Students (attendance < 65% OR if marks data shows low scores)
+    const attendanceData = toolResults.getAttendanceData;
+    if (attendanceData?.perStudent) {
+        const atRisk = Object.entries(attendanceData.perStudent)
+            .filter(([, s]) => s.total >= 5 && (s.present / s.total) < 0.65)
+            .map(([name, s]) => ({ name, attendance: Math.round((s.present / s.total) * 100), class: s.class, section: s.section }));
+
+        if (atRisk.length > 0) {
+            insights.push({
+                type: 'AT_RISK_ATTENDANCE',
+                severity: 'high',
+                title: 'Students at Risk — Low Attendance',
+                description: `${atRisk.length} student(s) have attendance below 65%`,
+                data: atRisk
+            });
+        }
+    }
+
+    // ── Academic Performance Insights
+    const marksData = toolResults.getMarksData;
+    if (marksData?.summary?.length > 0) {
+        // Find subjects with low class average (below 50%)
+        const weakSubjects = marksData.summary.filter(s => s.average < 50);
+        if (weakSubjects.length > 0) {
+            insights.push({
+                type: 'WEAK_SUBJECTS',
+                severity: 'medium',
+                title: 'Subjects Needing Attention — Low Class Average',
+                description: `${weakSubjects.length} exam(s) have class average below 50%`,
+                data: weakSubjects.map(s => ({ exam: s.exam, average: s.average, lowest: s.lowest }))
+            });
+        }
+
+        // Top performers
+        const toppers = marksData.summary
+            .filter(s => s.topper)
+            .map(s => ({ exam: s.exam, topper: s.topper, highest: s.highest }));
+        if (toppers.length > 0) {
+            insights.push({
+                type: 'TOP_PERFORMERS',
+                severity: 'info',
+                title: 'Top Performers',
+                data: toppers
+            });
+        }
+    }
+
+    // ── Fee Collection Insights
+    const feeData = toolResults.getFeesData;
+    if (feeData?.summary) {
+        const totalRecords = feeData.summary.paid + feeData.summary.unpaid + feeData.summary.partial;
+        const collectionRate = totalRecords > 0 ? Math.round((feeData.summary.paid / totalRecords) * 100) : 0;
+
+        insights.push({
+            type: 'FEE_COLLECTION',
+            severity: collectionRate < 50 ? 'high' : collectionRate < 75 ? 'medium' : 'info',
+            title: 'Fee Collection Rate',
+            description: `${collectionRate}% of fees collected (${feeData.summary.paid}/${totalRecords})`,
+            data: {
+                collected: `₹${feeData.summary.totalCollected}`,
+                pending: `₹${feeData.summary.totalPending}`,
+                defaulters: feeData.unpaidList?.length || 0
+            }
+        });
+    }
+
+    // ── Attendance Overview
+    if (attendanceData?.stats?.total > 0) {
+        const rate = Math.round((attendanceData.stats.present / attendanceData.stats.total) * 100);
+        insights.push({
+            type: 'ATTENDANCE_OVERVIEW',
+            severity: rate < 70 ? 'high' : rate < 85 ? 'medium' : 'info',
+            title: 'Overall Attendance Rate',
+            description: `School-wide attendance is at ${rate}%`,
+            data: attendanceData.stats
+        });
+    }
+
+    return insights;
+}
+
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 6. CONVERSATION SUMMARIZER — Compresses history to save tokens
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// NOTE: Uses extractive summarization for zero-latency.
+// In production, use LLM-based abstractive summarization:
+//   const summary = await summarizeWithLLM(olderMessages);
+
+function summarizeHistory(history) {
+    if (!history || history.length <= 6) return { summary: null, recentMessages: history || [] };
+
+    const olderMessages = history.slice(0, -4);
+    const recentMessages = history.slice(-4);
+
+    // Extract key topics from older messages
+    const topics = new Set();
+    const keyPoints = [];
+
+    olderMessages.forEach(msg => {
+        const content = msg.content.toLowerCase();
+        // Extract mentioned entities
+        const entities = ['student', 'teacher', 'fee', 'attendance', 'marks', 'exam', 'notice', 'timetable', 'policy'];
+        entities.forEach(e => { if (content.includes(e)) topics.add(e); });
+
+        // Keep user questions as key points (shortened)
+        if (msg.role === 'user' && msg.content.length > 10) {
+            keyPoints.push(msg.content.slice(0, 80));
+        }
     });
 
-    return `
-=== YOUR TEACHING DATA (Teacher — Limited Access) ===
-Name: ${teacher.userId?.name} | Subject: ${teacher.subject} | Assigned: ${myClass || 'None'}-${mySection || 'None'}
+    const summary = `[Previous discussion covered: ${[...topics].join(', ') || 'general topics'}. User asked about: ${keyPoints.slice(-3).join('; ') || 'various questions'}]`;
 
-YOUR SECTION STUDENTS (names only — ${sectionStudents.length} students):
-${sectionStudents.map(s => `  - ${s.userId?.name}`).join('\n') || '  No students assigned'}
+    return { summary, recentMessages };
+}
 
-YOUR SECTION ATTENDANCE:
-- Records: ${attendanceStats.total} | Present: ${attendanceStats.present} | Absent: ${attendanceStats.absent} | Late: ${attendanceStats.late}
 
-YOUR MARKS ENTERED (${myMarks.length} records):
-${Object.entries(marksBreakdown).map(([key, v]) => `  ${key}: ${v.count} students, Avg: ${Math.round(v.total / v.count)}`).join('\n') || '  None yet'}
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 7. CONTEXT BUILDER — Assembles the final prompt
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-YOUR EXAMS CREATED: ${myExams.length}
-${myExams.map(e => `  - "${e.title}" | ${e.class}-${e.section} | ${new Date(e.scheduledAt).toLocaleDateString()} | ${e.submissions?.length || 0} submissions`).join('\n') || ''}
+function buildSystemPrompt(role, intent, toolResults, insights, ragResults) {
+    let prompt = `You are TechVeda AI Assistant — an intelligent, data-aware school management chatbot.\n`;
+    prompt += `Current user role: ${role.toUpperCase()}\n`;
+    prompt += `Detected intent: ${intent}\n\n`;
 
-RECENT NOTICES (for teachers):
-${notices.map(n => `  - [${n.priority.toUpperCase()}] "${n.title}" by ${n.postedBy?.name} | ${new Date(n.createdAt).toLocaleDateString()}`).join('\n') || '  None'}
+    // Role-specific instructions
+    if (role === 'admin') {
+        prompt += `You have FULL access to all school data. Answer with real data when available.\n`;
+    } else if (role === 'teacher') {
+        prompt += `You can see ONLY your section's student names, your marks, and your exams. You CANNOT access student personal details, fees, or other teachers' data. Decline such requests politely.\n`;
+    } else {
+        prompt += `You can see ONLY your own data (attendance, marks, fees). You CANNOT access other students' or teachers' data. Decline such requests politely.\n`;
+    }
 
-NOTE: You do NOT have access to other teachers' data, student personal details, fee records, or other sections' data.
-=== END DATA ===`;
-};
+    prompt += `\nRules:\n- Use real data from TOOL RESULTS below when available\n- Keep responses concise (under 200 words unless detailed breakdown needed)\n- Use markdown formatting (bold, bullet points, tables) for readability\n- If data isn't available, say so honestly\n`;
 
-const fetchStudentContext = async (userId) => {
-    const student = await Student.findOne({ userId }).populate('userId', 'name');
-    if (!student) return '\nNo student profile found.';
+    // Add tool results
+    if (Object.keys(toolResults).length > 0) {
+        prompt += `\n━━━ TOOL RESULTS (fetched from database) ━━━\n`;
+        for (const [tool, data] of Object.entries(toolResults)) {
+            prompt += `\n[${tool}]:\n${JSON.stringify(data, null, 1).slice(0, 2000)}\n`;
+        }
+    }
 
-    const [attendance, marks, fees, notices] = await Promise.all([
-        Attendance.find({ studentId: userId }),
-        Marks.find({ studentId: userId }),
-        Fee.find({ studentId: userId }),
-        Notice.find({ $or: [{ audience: 'all' }, { audience: 'students' }, { audience: 'section', targetClass: student.class, targetSection: student.section }] }).sort({ createdAt: -1 }).limit(5).populate('postedBy', 'name')
-    ]);
+    // Add insights
+    if (insights.length > 0) {
+        prompt += `\n━━━ AI INSIGHTS (predictive analytics) ━━━\n`;
+        insights.forEach(i => {
+            prompt += `⚠️ [${i.severity.toUpperCase()}] ${i.title}: ${i.description || ''}\n`;
+            prompt += `   Data: ${JSON.stringify(i.data).slice(0, 500)}\n`;
+        });
+    }
 
-    const attendanceStats = { total: attendance.length, present: 0, absent: 0, late: 0 };
-    attendance.forEach(a => { attendanceStats[a.status]++; });
-    const attendanceRate = attendanceStats.total > 0 ? Math.round((attendanceStats.present / attendanceStats.total) * 100) : 0;
+    // Add RAG results
+    if (ragResults?.found) {
+        prompt += `\n━━━ KNOWLEDGE BASE (RAG retrieval) ━━━\n`;
+        ragResults.documents.forEach(doc => {
+            prompt += `📄 ${doc.title} [${doc.category}]:\n${doc.content}\n\n`;
+        });
+    }
 
-    const totalFee = fees.reduce((s, f) => s + f.totalAmount, 0);
-    const totalPaid = fees.reduce((s, f) => s + f.paidAmount, 0);
+    return prompt;
+}
 
-    return `
-=== YOUR DATA (Student — Personal Access Only) ===
-Name: ${student.userId?.name} | Class: ${student.class}-${student.section} | Admission: ${student.admissionNumber}
 
-YOUR ATTENDANCE:
-- Days Tracked: ${attendanceStats.total} | Present: ${attendanceStats.present} | Absent: ${attendanceStats.absent} | Late: ${attendanceStats.late}
-- Attendance Rate: ${attendanceRate}%
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 8. GROQ API CALLER — With retry logic for rate limits
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-YOUR MARKS:
-${marks.map(m => `  - ${m.subject} (${m.examType}): ${m.marksObtained}/${m.totalMarks} (${Math.round((m.marksObtained / m.totalMarks) * 100)}%)`).join('\n') || '  No marks yet'}
-
-YOUR FEES:
-- Total: ₹${totalFee} | Paid: ₹${totalPaid} | Pending: ₹${totalFee - totalPaid}
-${fees.map(f => `  - Month ${f.month}/${f.year}: ₹${f.totalAmount} — ${f.status}`).join('\n') || '  No fee records'}
-
-YOUR NOTICES:
-${notices.map(n => `  - [${n.priority.toUpperCase()}] "${n.title}" by ${n.postedBy?.name} | ${new Date(n.createdAt).toLocaleDateString()}`).join('\n') || '  None'}
-
-NOTE: You can ONLY see your own data. You do NOT have access to other students' records, teacher information, or school-wide reports.
-=== END DATA ===`;
-};
-
-// ─── GROQ API CALL WITH RETRY ───
-
-const callGroq = async (messages, retries = 2) => {
+async function callGroq(messages, retries = 2) {
     for (let attempt = 0; attempt <= retries; attempt++) {
         const groqRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
             method: 'POST',
@@ -306,53 +560,96 @@ const callGroq = async (messages, retries = 2) => {
             continue;
         }
 
-        if (!groqRes.ok) {
-            throw new Error(groqData.error?.message || 'Groq API error');
-        }
-
+        if (!groqRes.ok) throw new Error(groqData.error?.message || 'Groq API error');
         return groqData;
     }
-};
+}
 
-// ─── MAIN HANDLER ───
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 9. MAIN AGENT HANDLER — Orchestrates the full pipeline
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//
+// Pipeline:
+//   User Message
+//     → Intent Classification (keyword-based, zero latency)
+//     → Tool Selection (picks DB queries based on intent + role)
+//     → Tool Execution (parallel DB queries)
+//     → Insights Engine (predictive analytics from data)
+//     → RAG Retrieval (knowledge base search if needed)
+//     → Conversation Summarization (compress old history)
+//     → Context Assembly (build system prompt with all results)
+//     → LLM Call (single Groq API call for final response)
+//     → Response
+//
 
 const sendMessage = async (req, res) => {
     try {
         const { message, history } = req.body;
-
         if (!message || !message.trim()) {
             return res.status(400).json({ message: 'Message is required' });
         }
 
         const role = req.user.role;
-        let systemPrompt = '';
-        let schoolData = '';
+        const userId = req.user._id;
+        const userMessage = message.trim();
 
-        if (role === 'admin') {
-            systemPrompt = ADMIN_SYSTEM_PROMPT;
-            schoolData = await fetchAdminContext();
-        } else if (role === 'teacher') {
-            systemPrompt = TEACHER_SYSTEM_PROMPT;
-            schoolData = await fetchTeacherContext(req.user._id);
-        } else if (role === 'student') {
-            systemPrompt = STUDENT_SYSTEM_PROMPT;
-            schoolData = await fetchStudentContext(req.user._id);
+        // ── Step 1: Classify intent
+        const intent = classifyIntent(userMessage);
+
+        // ── Step 2: Select tools
+        const selectedTools = selectTools(intent, userMessage, role);
+
+        // ── Step 3: Execute tools in parallel
+        const toolResults = selectedTools.length > 0
+            ? await executeTools(selectedTools, role, userId, userMessage)
+            : {};
+
+        // ── Step 4: Generate insights (only for data/insight queries)
+        const insights = (intent === 'insights' || intent === 'data_query')
+            ? generateInsights(toolResults)
+            : [];
+
+        // ── Step 5: RAG retrieval (for knowledge queries, or as supplementary)
+        let ragResults = null;
+        if (intent === 'knowledge' || selectedTools.includes('searchKnowledge')) {
+            ragResults = toolResults.searchKnowledge || null;
         }
 
-        const messages = [
-            { role: 'system', content: systemPrompt + '\n' + schoolData }
-        ];
+        // ── Step 6: Summarize conversation history
+        const { summary, recentMessages } = summarizeHistory(history || []);
 
-        if (history && Array.isArray(history)) {
-            messages.push(...history.slice(-10));
+        // ── Step 7: Build the system prompt with all context
+        const systemPrompt = buildSystemPrompt(role, intent, toolResults, insights, ragResults);
+
+        // ── Step 8: Assemble messages for LLM
+        const messages = [{ role: 'system', content: systemPrompt }];
+
+        if (summary) {
+            messages.push({ role: 'system', content: `Conversation summary: ${summary}` });
         }
 
-        messages.push({ role: 'user', content: message.trim() });
+        if (recentMessages.length > 0) {
+            messages.push(...recentMessages);
+        }
 
+        messages.push({ role: 'user', content: userMessage });
+
+        // ── Step 9: Call LLM
         const groqData = await callGroq(messages);
         const reply = groqData.choices[0].message.content.trim();
 
-        res.status(200).json({ reply });
+        // ── Step 10: Return response with metadata
+        res.status(200).json({
+            reply,
+            _meta: {
+                intent,
+                toolsUsed: selectedTools,
+                insightsGenerated: insights.length,
+                ragUsed: !!ragResults?.found
+            }
+        });
+
     } catch (error) {
         console.error('Chatbot error:', error);
         res.status(500).json({ message: 'Error getting response', error: error.message });
