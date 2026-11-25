@@ -42,7 +42,7 @@ const sendMessage = async (req, res) => {
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify({
-                model: 'llama-3.3-70b-versatile',
+                model: 'qwen/qwen3.8-27b',
                 messages,
                 temperature: 0.7,
                 max_tokens: 1024
