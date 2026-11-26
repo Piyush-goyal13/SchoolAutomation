@@ -46,13 +46,14 @@ const generateExam = async (req, res) => {
 Rules:
 - Each question must have exactly 4 options (A, B, C, D)
 - Only one option is correct
-- Return ONLY a valid JSON array, no markdown, no explanation
+- Return ONLY a valid JSON array, no markdown, no explanation, no thinking
 - Format: [{"question":"...","options":["A","B","C","D"],"correctIndex":0}]
 - correctIndex is 0-based (0=A, 1=B, 2=C, 3=D)
 
 Content:
 ${text}` }],
-                temperature: 0.7
+                temperature: 0.7,
+                max_tokens: 4096
             })
         });
 
@@ -60,7 +61,9 @@ ${text}` }],
         if (!groqRes.ok) throw new Error(groqData.error?.message || 'Groq API error');
 
         const raw = groqData.choices[0].message.content.trim();
-        const match = raw.match(/\[.*\]/s);
+        // Strip Qwen's <think>...</think> reasoning tags if present
+        const cleaned = raw.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
+        const match = cleaned.match(/\[.*\]/s);
         if (!match) throw new Error('Groq did not return a valid JSON array');
         const questions = JSON.parse(match[0]);
 
