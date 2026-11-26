@@ -106,6 +106,7 @@ const saveExam = async (req, res) => {
 
         res.status(201).json({ message: 'Exam scheduled successfully', examId: exam._id });
     } catch (error) {
+        console.error('Save exam error:', error);
         res.status(500).json({ message: 'Error saving exam', error: error.message });
     }
 };
